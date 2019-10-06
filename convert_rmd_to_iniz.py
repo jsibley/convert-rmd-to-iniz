@@ -60,13 +60,13 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
 
     # Process all answer objects converting from XML to CSV
     for key in answers.keys():
-        if not "Answers" in concept_csv[concepts[answers[key]\
-                            ["answer_concept"]]\
-                            ["concept_id"]].keys():
-            concept_csv[concepts[answers[key]["answer_concept"]]\
-                        ["concept_id"]]["Answers"] = ""
-        concept_csv[concepts[answers[key]["answer_concept"]]["concept_id"]]\
-        ["Answers"] += ";" + concepts[answers[key]["answer_concept"]]["uuid"]
+        if not "Answers" in concept_csv[answers[key]["concept_id"]].keys():
+            concept_csv[answers[key]["concept_id"]]["Answers"] = ""
+        concept_csv[answers[key]["concept_id"]]["Answers"] += \
+            concepts[answers[key]["answer_concept"]]["uuid"] + ";"
+    for key in answers.keys():
+        concept_csv[answers[key]["concept_id"]]["Answers"] = \
+        concept_csv[answers[key]["concept_id"]]["Answers"].rstrip(";")
 
     # Process all name objects converting from XML to CSV
     for key in names.keys():
@@ -86,8 +86,13 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
         if not "Same as mappings" in concept_csv[ref_maps[key]\
                                                  ["concept_id"]].keys():
             concept_csv[ref_maps[key]["concept_id"]]["Same as mappings"] = ""
-        concept_csv[ref_maps[key]["concept_id"]]["Same as mappings"] += ";" + \
-        ref_dicts["ReferenceTerm"][ref_maps[key]["concept_reference_term_id"]]
+        concept_csv[ref_maps[key]["concept_id"]]["Same as mappings"] += \
+        ref_dicts["ReferenceTerm"][ref_maps[key]["concept_reference_term_id"]]\
+        + ";"
+    for key in ref_maps.keys():
+        concept_csv[ref_maps[key]["concept_id"]]["Same as mappings"] = \
+        concept_csv[ref_maps[key]["concept_id"]]["Same as mappings"].\
+        rstrip(";")
 
     # Process all set objects converting from XML to CSV
     for key in sets.keys():
@@ -97,7 +102,12 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
             concept_csv[concepts[sets[key]["concept_set"]]\
                         ["concept_id"]]["Members"] = ""
         concept_csv[concepts[sets[key]["concept_set"]]["concept_id"]]\
-        ["Members"] += ";" + concepts[sets[key]["concept_id"]]["uuid"]
+        ["Members"] += concepts[sets[key]["concept_id"]]["uuid"] + ";"
+    for key in sets.keys():
+        concept_csv[concepts[sets[key]["concept_set"]]["concept_id"]]\
+        ["Members"] =\
+        concept_csv[concepts[sets[key]["concept_set"]]["concept_id"]]\
+        ["Members"].rstrip(";")
 
 def build_concept_metadata_mds_header_xml(name, desc, version, datatypes,
                                           classes, map_types, ref_sources,
@@ -212,13 +222,15 @@ def build_concept_metadata_mds_metadata_xml(datatypes, classes, map_types,
          (classes, "ConceptClass"),
          (map_types, "ConceptMapType"),
          (ref_sources, "ConceptSource"),
-         (ref_terms, "ConceptReferenceTerm")]
+         (ref_terms, "ConceptReferenceTerm", ref_sources)]
     for item_list in item_metadata:
         id_cnt = build_concept_metadata_mds_metadata_xml_items(list_el, id_cnt,
                                                                item_list)
     return list_el
 
 def build_concept_metadata_mds_metadata_xml_items(list_el, id_cnt, item_list):
+    concept_source_ids = dict()
+    
     for key in item_list[0]:
         item_el = et.SubElement(list_el,
                                 "org.openmrs." + item_list[1])
@@ -226,6 +238,39 @@ def build_concept_metadata_mds_metadata_xml_items(list_el, id_cnt, item_list):
         id_cnt += 1
         item_el.set("uuid", key)
         for attrib_key in item_list[0][key].keys():
+            if item_list[1] == "ConceptReferenceTerm":
+                if attrib_key == "uuid":
+                    continue
+                elif attrib_key == "concept_source_id":
+                    if item_list[0][key][attrib_key] not in \
+                    concept_source_ids.keys():
+                        for src_key in item_list[2]:
+                            if item_list[2][src_key][attrib_key] == \
+                            item_list[0][key][attrib_key]:
+                                src_el = et.SubElement(item_el, \
+                                                       "conceptSource")
+                                src_el.set("id", str(id_cnt))
+                                concept_source_ids[item_list[0][key]\
+                                                   [attrib_key]] = id_cnt
+                                id_cnt += 1
+                                src_el.set("resolves-to", \
+                                           "org.openmrs.ConceptSource")
+                                src_el.set("uuid", item_list[2][src_key]\
+                                           ["uuid"])
+                                for src_att_key in item_list[2][src_key]\
+                                .keys():
+                                    if src_att_key == "uuid":
+                                        continue
+                                    src_att_el = et.SubElement(src_el, \
+                                                    camel_case(src_att_key))
+                                    src_att_el.text = \
+                                    item_list[2][src_key][src_att_key]
+                                break
+                    else:
+                        src_el = et.SubElement(item_el, "conceptSource")
+                        src_el.set("reference",
+                                   str(concept_source_ids[item_list[0][key]\
+                                                          [attrib_key]]))
             el = et.SubElement(item_el, camel_case(attrib_key))
             el.text = item_list[0][key][attrib_key]
 
@@ -391,10 +436,10 @@ def create_concept_metadata_mds_package(concept_xml_filenames, output_path,
             map_types[map_type_el.get("uuid")] = map_type_el.attrib
 
         for ref_source_el in tree.findall('concept_reference_source'):
-            if "Source" in ref_dicts.keys():
-                if ref_source_el.get("concept_source_id") in \
-                ref_dicts["Source"].keys():
-                    continue
+#            if "Source" in ref_dicts.keys():
+#                if ref_source_el.get("concept_source_id") in \
+#                ref_dicts["Source"].keys():
+#                    continue
             ref_sources[ref_source_el.get("uuid")] = ref_source_el.attrib
 
         for ref_term_el in tree.findall('concept_reference_term'):
@@ -404,12 +449,14 @@ def create_concept_metadata_mds_package(concept_xml_filenames, output_path,
                     continue
             ref_terms[ref_term_el.get("uuid")] = ref_term_el.attrib
     
+        build_ref_dicts(ref_dicts, datatypes, classes, map_types, ref_sources,
+                        ref_terms)
+
         header_xml_content = \
             build_concept_metadata_mds_header_xml(name, desc, version,
                                                   datatypes, classes,
                                                   map_types, ref_sources,
                                                   ref_terms)
-
         metadata_xml_content = \
             build_concept_metadata_mds_metadata_xml(datatypes, classes,
                                                     map_types, ref_sources,
@@ -428,9 +475,6 @@ def create_concept_metadata_mds_package(concept_xml_filenames, output_path,
                              et.tostring(metadata_xml_content,
                                          encoding="unicode", method="xml"),
                              compress_type=zipfile.ZIP_DEFLATED)
-                             
-        build_ref_dicts(ref_dicts, datatypes, classes, map_types, ref_sources,
-                        ref_terms)
     
 def error(msg):
     print(msg)
