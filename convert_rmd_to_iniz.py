@@ -17,6 +17,7 @@ Usage:
 
 import csv, datetime, getopt, os, re, sys, uuid, zipfile
 import xml.etree.cElementTree as et
+from collections import OrderedDict
 
 def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
                       ref_maps, sets, ref_dicts):
@@ -54,6 +55,9 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
 
     # Process all description objects converting from XML to CSV
     for key in descriptions.keys():
+        if "voided" in descriptions[key].keys():
+            if descriptions[key]["voided"] == "true":
+                continue
         concept_csv[descriptions[key]["concept_id"]]["Description:" + 
                    descriptions[key]["locale"]] = \
                    descriptions[key]["description"]
@@ -70,8 +74,11 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
 
     # Process all name objects converting from XML to CSV
     for key in names.keys():
+        if "voided" in names[key].keys():
+            if names[key]["voided"] == "true":
+                continue
         if not "concept_name_type" in names[key].keys():
-            concept_csv[names[key]["concept_id"]]["Fully specified name:" + \
+            concept_csv[names[key]["concept_id"]]["Short name:" + \
                        names[key]["locale"]] = names[key]["name"]
         else:
             if names[key]["concept_name_type"] == "SHORT":
@@ -372,7 +379,15 @@ def convert_concept_xml_to_csv(concept_xml_filenames, output_path,
         concept_csv = dict()
         build_concept_csv(concept_csv, concepts, descriptions,
                           answers, names, ref_maps, sets, ref_dicts)
-                
+
+        # Need to make sure any concepts with 'Answers' or 'Members' get
+        # defined after the definitions of those constituent concepts
+        final_concept_csv = dict()
+        for key in concept_csv.keys():
+            if key in final_concept_csv.keys():
+                continue
+            order_final_concepts(final_concept_csv, concept_csv, key)
+
         header_data = []
         for key in concept_csv.keys():
             for csv_key in concept_csv[key].keys():
@@ -388,11 +403,36 @@ def convert_concept_xml_to_csv(concept_xml_filenames, output_path,
                                     quoting=csv.QUOTE_NONNUMERIC)
 
             writer.writeheader()
-            for key in concept_csv.keys():
-                writer.writerow(concept_csv[key])
+            for key in final_concept_csv.keys():
+                writer.writerow(final_concept_csv[key])
     
         os.remove(output_path + '/' + xml_filename)
-            
+
+def order_final_concepts(final_concept_csv, concept_csv, key):
+    if "Members" in concept_csv[key].keys():
+        for member in concept_csv[key]["Members"].split(";"):
+            for concept_key in concept_csv.keys():
+                if concept_csv[concept_key]["Uuid"] == member:
+                    if concept_key in final_concept_csv.keys():
+                        continue
+                    order_final_concepts(final_concept_csv, concept_csv, 
+                                         concept_key)
+                    break
+    elif "Answers" in concept_csv[key].keys():
+        for answer in concept_csv[key]["Answers"].split(";"):
+            for concept_key in concept_csv.keys():
+                if concept_csv[concept_key]["Uuid"] == answer:
+                    if concept_key in final_concept_csv.keys():
+                        continue
+                    order_final_concepts(final_concept_csv, concept_csv, 
+                                         concept_key)
+                    break
+
+    final_concept_csv[key] = dict()
+    final_concept_csv[key] = concept_csv[key]
+
+    return
+
 def create_concept_metadata_mds_package(concept_xml_filenames, output_path,
                                         mds_output_path, regexes, ref_dicts):
     for xml_filename in concept_xml_filenames:
