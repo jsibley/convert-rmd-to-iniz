@@ -64,6 +64,9 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
 
     # Process all answer objects converting from XML to CSV
     for key in answers.keys():
+        if "retired" in concepts[answers[key]["answer_concept"]].keys():
+            if concepts[answers[key]["answer_concept"]]["retired"] == "true":
+                continue
         if not "Answers" in concept_csv[answers[key]["concept_id"]].keys():
             concept_csv[answers[key]["concept_id"]]["Answers"] = ""
         concept_csv[answers[key]["concept_id"]]["Answers"] += \
@@ -103,6 +106,9 @@ def build_concept_csv(concept_csv, concepts, descriptions, answers, names,
 
     # Process all set objects converting from XML to CSV
     for key in sets.keys():
+        if "retired" in concepts[sets[key]["concept_id"]].keys():
+            if concepts[sets[key]["concept_id"]]["retired"] == "true":
+                continue
         if not "Members" in concept_csv[concepts[sets[key]\
                             ["concept_set"]]\
                             ["concept_id"]].keys():
